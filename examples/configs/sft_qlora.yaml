@@ -1,0 +1,40 @@
+# Example QLoRA SFT run on a 1B Llama-family model.
+#
+# Run with:  whoa-llm train examples/configs/sft_qlora.yaml
+#
+# Requires the [core] extra (transformers, trl, peft, bitsandbytes, …) and a
+# CUDA GPU with ~6 GB free VRAM.
+model_id: meta-llama/Llama-3.2-1B
+method: qlora
+precision: bf16
+engine: auto
+
+dataset:
+  name: tatsu-lab/alpaca
+  split: train[:1000]
+  format: alpaca
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+
+train:
+  epochs: 1
+  learning_rate: 2.0e-4
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 4
+  max_seq_length: 1024
+  warmup_ratio: 0.03
+  logging_steps: 5
+  save_steps: 200
+  optim: paged_adamw_8bit
+  gradient_checkpointing: true
+
+memory:
+  quantization: 4bit
+  attn_impl: sdpa
+
+output_dir: outputs/llama-3.2-1b-alpaca-qlora
+run_name: llama-3.2-1b-alpaca-qlora
+seed: 42

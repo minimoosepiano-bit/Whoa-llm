@@ -114,6 +114,12 @@ class TestMakeFormattingFunc:
         result = fn(batch)
         assert result == ["a", "b", "c"]
 
+    def test_single_example_formatting(self, dummy_tokenizer):
+        """TRL >=0.11 passes a single dict, not a batch."""
+        fn = make_formatting_func("raw_text", dummy_tokenizer)
+        result = fn({"text": "hello"})
+        assert result == "hello"
+
     def test_column_map(self, dummy_tokenizer):
         fn = make_formatting_func("completion", dummy_tokenizer, column_map={"prompt_text": "prompt"})
         batch = [{"prompt_text": "Hello ", "completion": "world"}]

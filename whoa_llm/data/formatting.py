@@ -152,11 +152,13 @@ def make_formatting_func(
     template: str,
     tokenizer: Any,
     column_map: dict[str, str] | None = None,
-) -> Callable[[list[dict[str, Any]]], list[str]]:
+) -> Callable[[Any], Any]:
     """Return a ``formatting_func`` compatible with ``trl.SFTTrainer``.
 
-    ``SFTTrainer`` passes a *batch* (list of dicts) to ``formatting_func``
-    and expects a list of strings back.
+    The returned callable handles both calling conventions:
+
+    * single example (dict) → returns ``str`` (TRL >=0.11)
+    * batch (list of dicts) → returns ``list[str]`` (older TRL)
 
     Parameters
     ----------
@@ -170,12 +172,16 @@ def make_formatting_func(
     """
     formatter = get_formatter(template)
 
-    def _func(examples: list[dict[str, Any]]) -> list[str]:
-        results: list[str] = []
-        for ex in examples:
-            if column_map:
-                ex = {column_map.get(k, k): v for k, v in ex.items()}
-            results.append(formatter(ex, tokenizer))
-        return results
+    def _apply(ex: dict[str, Any]) -> str:
+        if column_map:
+            ex = {column_map.get(k, k): v for k, v in ex.items()}
+        return formatter(ex, tokenizer)
+
+    def _func(examples: Any) -> Any:
+        # Batch mode: a plain list of examples → list of strings.
+        if isinstance(examples, list):
+            return [_apply(ex) for ex in examples]
+        # Single-example mode: dict or dict-like (e.g. ``datasets.LazyRow``).
+        return _apply(examples)
 
     return _func

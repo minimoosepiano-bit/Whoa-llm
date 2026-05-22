@@ -13,6 +13,19 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _supports_dtype_kwarg() -> bool:
+    """transformers >=4.45 accepts ``dtype=``; older versions need ``torch_dtype=``."""
+    try:
+        import inspect
+
+        from transformers import AutoModelForCausalLM
+
+        sig = inspect.signature(AutoModelForCausalLM.from_pretrained)
+        return "dtype" in sig.parameters
+    except Exception:
+        return False
+
+
 def load_model_and_tokenizer(
     model_id: str,
     *,
@@ -93,14 +106,20 @@ def load_model_and_tokenizer(
 
     logger.info("HF engine: loading model %s (quantization=%s, device_map=%s)",
                 model_id, quantization, device_map)
+    if bnb_config is not None:
+        model_kwargs["quantization_config"] = bnb_config
+    elif load_in_8bit:
+        model_kwargs["load_in_8bit"] = True
+
+    # transformers >=4.40 prefers the ``dtype`` kwarg over ``torch_dtype``.
+    dtype_kwarg = "dtype" if _supports_dtype_kwarg() else "torch_dtype"
+
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        quantization_config=bnb_config,
-        load_in_8bit=load_in_8bit if not load_in_4bit else False,
-        torch_dtype=torch_dtype,
         device_map=device_map,
         trust_remote_code=trust_remote_code,
         revision=revision,
+        **{dtype_kwarg: torch_dtype},
         **model_kwargs,
     )
 

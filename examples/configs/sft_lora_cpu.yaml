@@ -1,0 +1,29 @@
+# Minimal CPU-only LoRA SFT example using a tiny model (smoke / verification).
+#
+# Run with:  whoa-llm train examples/configs/sft_lora_cpu.yaml
+model_id: sshleifer/tiny-gpt2
+method: lora
+precision: fp32
+engine: hf
+
+dataset:
+  name: tatsu-lab/alpaca
+  split: train[:100]
+  format: alpaca
+
+lora:
+  r: 4
+  alpha: 8
+  target_modules: [c_attn]
+
+train:
+  max_steps: 10
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 1
+  max_seq_length: 128
+  optim: adamw_torch
+  gradient_checkpointing: false
+  logging_steps: 1
+
+output_dir: outputs/tiny-gpt2-lora-cpu
+seed: 42

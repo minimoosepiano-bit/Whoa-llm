@@ -40,9 +40,15 @@ def ui(
 
 @app.command()
 def train(config: Path = typer.Argument(..., exists=True, readable=True)) -> None:
-    """Run a headless training job from a YAML config. (Implemented in Phase 3.)"""
-    typer.echo(f"Training from {config} — implemented in Phase 3.")
-    raise typer.Exit(code=1)
+    """Run a headless SFT job from a YAML config."""
+    import yaml
+
+    from whoa_llm.training.sft import SFTConfig, run_sft
+
+    data = yaml.safe_load(config.read_text())
+    cfg = SFTConfig.model_validate(data)
+    summary = run_sft(cfg)
+    typer.echo(yaml.safe_dump(summary, sort_keys=False))
 
 
 if __name__ == "__main__":  # pragma: no cover
