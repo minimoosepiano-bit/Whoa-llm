@@ -215,6 +215,7 @@ def run_sft(
     cfg: SFTConfig,
     *,
     metrics_callback: Any | None = None,
+    extra_callbacks: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Run a single SFT job and return a summary dict.
 
@@ -312,8 +313,13 @@ def run_sft(
     elif "tokenizer" in sftt_sig:
         trainer_kwargs["tokenizer"] = tokenizer
 
+    callbacks: list[Any] = []
     if metrics_callback is not None:
-        trainer_kwargs["callbacks"] = [metrics_callback]
+        callbacks.append(metrics_callback)
+    if extra_callbacks:
+        callbacks.extend(extra_callbacks)
+    if callbacks:
+        trainer_kwargs["callbacks"] = callbacks
 
     trainer = SFTTrainer(**trainer_kwargs)
 
