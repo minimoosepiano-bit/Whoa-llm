@@ -25,6 +25,7 @@ def load_model_and_tokenizer(
     device_map: str = "auto",    # ignored by Unsloth but kept for API compat
     offload_dir: str | Path | None = None,  # not supported by Unsloth; logged
     max_memory: dict[Any, str] | None = None,  # not supported; logged
+    cpu_offload: bool = False,   # not supported; logged
     attn_impl: str | None = None,
     trust_remote_code: bool = False,
     revision: str | None = None,
@@ -47,11 +48,12 @@ def load_model_and_tokenizer(
     except ImportError as exc:
         raise EngineUnavailable("Unsloth is not installed.") from exc
 
-    if offload_dir is not None:
+    if offload_dir is not None or cpu_offload:
         logger.warning(
             "Unsloth engine does not support CPU/disk offloading; "
-            "ignoring offload_dir=%s. Use the HF engine for low-VRAM offload.",
-            offload_dir,
+            "ignoring offload_dir=%s cpu_offload=%s. "
+            "Use the HF engine for low-VRAM offload.",
+            offload_dir, cpu_offload,
         )
     if max_memory is not None:
         logger.warning(

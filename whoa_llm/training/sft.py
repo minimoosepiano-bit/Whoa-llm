@@ -257,6 +257,7 @@ def run_sft(
         offload_dir=cfg.memory.disk_offload_dir,
         max_memory=cfg.memory.max_memory,
         attn_impl=cfg.memory.attn_impl,
+        cpu_offload=cfg.memory.cpu_offload,
         trust_remote_code=cfg.trust_remote_code,
     )
 

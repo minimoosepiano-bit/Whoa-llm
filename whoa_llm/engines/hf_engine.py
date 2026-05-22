@@ -35,6 +35,7 @@ def load_model_and_tokenizer(
     offload_dir: str | Path | None = None,
     max_memory: dict[Any, str] | None = None,
     attn_impl: str | None = None,  # "sdpa" | "flash_attention_2" | "eager" | None
+    cpu_offload: bool = False,
     trust_remote_code: bool = False,
     revision: str | None = None,
 ) -> tuple[Any, Any]:
@@ -85,6 +86,11 @@ def load_model_and_tokenizer(
         model_kwargs["attn_implementation"] = attn_impl
 
     # ---------- offload / device map ----------------------------------------
+    # CPU offload implies we need an offload directory for the parts that don't
+    # fit in either GPU or CPU RAM.
+    if cpu_offload and offload_dir is None:
+        offload_dir = Path("outputs/.offload")
+
     if offload_dir is not None:
         offload_dir = Path(offload_dir)
         offload_dir.mkdir(parents=True, exist_ok=True)
