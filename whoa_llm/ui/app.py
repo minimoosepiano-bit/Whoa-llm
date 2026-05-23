@@ -99,6 +99,93 @@ def _dataset_preview_handler(name: str, config: str, split: str, fmt: str, model
 # ---------------------------------------------------------------------------
 # Config assembly
 # ---------------------------------------------------------------------------
+def _save_custom_reward(name: str, code: str) -> str:
+    """Persist a user-pasted reward function under ``~/.whoa_llm/user_rewards/``.
+
+    The file must define a function with the same name (or a function called
+    ``reward``).  Returns a status message.
+    """
+    name = (name or "").strip()
+    if not name.isidentifier():
+        return f"❌ '{name}' is not a valid Python identifier."
+    if not code.strip():
+        return "❌ Paste a reward function body."
+
+    user_dir = Path.home() / ".whoa_llm" / "user_rewards"
+    user_dir.mkdir(parents=True, exist_ok=True)
+    target = user_dir / f"{name}.py"
+    target.write_text(code)
+    return f"✅ Saved to `{target}`. Reference it by name `{name}` in the rewards list."
+
+
+def _build_grpo_config(form: dict[str, Any], rewards: list) -> Any:
+    """Build a :class:`GRPOConfig` from the UI form + selected/parametrised rewards."""
+    from whoa_llm.training.grpo import GRPOConfig, RewardSpec
+    from whoa_llm.training.sft import (
+        DatasetConfig, LoRAConfig, MemoryConfig, TrainConfig,
+    )
+
+    reward_specs: list[RewardSpec] = []
+    for r in rewards:
+        if isinstance(r, RewardSpec):
+            reward_specs.append(r)
+            continue
+        if isinstance(r, str):
+            reward_specs.append(RewardSpec(name=r))
+            continue
+        if isinstance(r, dict):
+            reward_specs.append(RewardSpec(**r))
+
+    cfg = GRPOConfig(
+        model_id=form["model_id"],
+        engine=form.get("engine", "auto"),
+        method=form.get("method", "lora"),
+        precision=form.get("precision", "bf16"),
+        seed=int(form.get("seed", 42)),
+        output_dir=form.get("output_dir") or "outputs/grpo",
+        run_name=form.get("run_name") or None,
+        dataset=DatasetConfig(
+            name=form["dataset_name"],
+            config=form.get("dataset_config") or None,
+            split=form.get("dataset_split", "train"),
+            format="raw_text",  # GRPO uses the prompt column directly.
+            max_samples=int(form["max_samples"]) if form.get("max_samples") else None,
+        ),
+        prompt_column=form.get("prompt_column", "prompt"),
+        lora=LoRAConfig(
+            r=int(form.get("lora_r", 16)),
+            alpha=int(form.get("lora_alpha", 32)),
+            dropout=float(form.get("lora_dropout", 0.05)),
+        ),
+        train=TrainConfig(
+            epochs=float(form.get("epochs", 1)),
+            learning_rate=float(form.get("learning_rate", 5e-6)),
+            per_device_train_batch_size=int(form.get("batch_size", 1)),
+            gradient_accumulation_steps=int(form.get("grad_accum", 4)),
+            max_seq_length=int(form.get("max_seq_length", 1024)),
+            max_steps=int(form.get("max_steps", -1)),
+            logging_steps=int(form.get("logging_steps", 1)),
+            save_steps=int(form.get("save_steps", 100)),
+            optim=form.get("optim", "paged_adamw_8bit"),
+            gradient_checkpointing=bool(form.get("gradient_checkpointing", True)),
+        ),
+        memory=MemoryConfig(
+            quantization=form.get("quantization", "4bit"),
+            cpu_offload=bool(form.get("cpu_offload", False)),
+            attn_impl=form.get("attn_impl") or None,
+        ),
+        rewards=reward_specs,
+        num_generations=int(form.get("num_generations", 4)),
+        max_prompt_length=int(form.get("max_prompt_length", 256)),
+        max_completion_length=int(form.get("max_completion_length", 256)),
+        beta=float(form.get("beta", 0.04)),
+        temperature=float(form.get("temperature", 1.0)),
+        top_p=float(form.get("top_p", 1.0)),
+        use_vllm=bool(form.get("use_vllm", False)),
+    )
+    return cfg.normalised()
+
+
 def _build_config(form: dict[str, Any]) -> Any:
     """Turn the flattened UI dict into an :class:`SFTConfig`."""
     from whoa_llm.training.sft import (
@@ -355,6 +442,222 @@ def _build_run_tab(form: gr.State, run_state: RunState):
         timer.tick(_tick, outputs=[status_md, loss_plot, log_box])
 
 
+def _list_available_rewards() -> list[str]:
+    """Return the list of selectable reward names (built-ins + user-pasted)."""
+    from whoa_llm.training.rewards import discover_builtins
+
+    names = list(discover_builtins().keys())
+    user_dir = Path.home() / ".whoa_llm" / "user_rewards"
+    if user_dir.exists():
+        for p in sorted(user_dir.glob("*.py")):
+            if p.stem not in names:
+                names.append(p.stem)
+    return names
+
+
+def _build_grpo_tab(form: gr.State, run_state: RunState):
+    with gr.Tab("GRPO"):
+        gr.Markdown(
+            "### Group Relative Policy Optimization\n"
+            "RL post-training driven by reward functions — no preference pairs "
+            "needed.  Pick a prompt dataset, choose one or more rewards, watch "
+            "sample completions evolve.",
+        )
+
+        # ---- Dataset --------------------------------------------------------
+        gr.Markdown("#### Dataset")
+        with gr.Row():
+            ds_name = gr.Textbox(label="Dataset id", value="openai/gsm8k")
+            ds_config = gr.Textbox(label="Config", value="main")
+            ds_split = gr.Textbox(label="Split", value="train[:500]")
+        prompt_col = gr.Textbox(label="Prompt column (renamed to 'prompt')", value="question")
+
+        # ---- Rewards --------------------------------------------------------
+        gr.Markdown("#### Rewards")
+        reward_choices = gr.CheckboxGroup(
+            label="Reward functions",
+            choices=_list_available_rewards(),
+            value=["regex_format_reward"],
+        )
+        with gr.Accordion("Reward parameters", open=False):
+            regex_pattern = gr.Textbox(
+                label="regex_format_reward — pattern",
+                value=r"<answer>\d+</answer>",
+            )
+            length_target = gr.Number(label="length_reward — target_tokens", value=64)
+            contains_kw = gr.Textbox(
+                label="contains_reward — keywords (comma-separated)", value="",
+            )
+            regex_weight = gr.Number(label="regex weight", value=1.0)
+            length_weight = gr.Number(label="length weight", value=0.2)
+            contains_weight = gr.Number(label="contains weight", value=0.5)
+
+        with gr.Accordion("Paste a custom reward", open=False):
+            gr.Markdown(
+                "Define `def <name>(prompts, completions, **kwargs) -> list[float]`. "
+                "Saved to `~/.whoa_llm/user_rewards/<name>.py` and importable by name."
+            )
+            custom_name = gr.Textbox(label="Function name", value="my_reward")
+            custom_code = gr.Code(
+                label="Python source",
+                language="python",
+                value=(
+                    "def my_reward(prompts, completions, **kwargs):\n"
+                    "    # Example: reward completions containing 'hello'.\n"
+                    "    return [1.0 if 'hello' in str(c).lower() else 0.0 for c in completions]\n"
+                ),
+            )
+            save_custom_btn = gr.Button("Save custom reward")
+            save_status = gr.Markdown()
+            refresh_btn = gr.Button("Refresh reward list")
+
+            save_custom_btn.click(
+                _save_custom_reward,
+                inputs=[custom_name, custom_code],
+                outputs=[save_status],
+            )
+
+            def _refresh():
+                return gr.update(choices=_list_available_rewards())
+            refresh_btn.click(_refresh, outputs=[reward_choices])
+
+        # ---- Generation knobs ----------------------------------------------
+        gr.Markdown("#### Generation")
+        with gr.Row():
+            num_gen = gr.Slider(label="num_generations", minimum=2, maximum=16, step=1, value=4)
+            max_prompt = gr.Number(label="max_prompt_length", value=256, precision=0)
+            max_completion = gr.Number(label="max_completion_length", value=256, precision=0)
+        with gr.Row():
+            beta = gr.Slider(label="KL beta", minimum=0.0, maximum=0.5, step=0.005, value=0.04)
+            temperature = gr.Slider(label="temperature", minimum=0.1, maximum=2.0, step=0.05, value=1.0)
+            top_p = gr.Slider(label="top_p", minimum=0.1, maximum=1.0, step=0.05, value=1.0)
+        use_vllm = gr.Checkbox(label="Use vLLM (faster generation; needs vllm install)", value=False)
+
+        # ---- Run controls --------------------------------------------------
+        gr.Markdown("#### Run")
+        with gr.Row():
+            grpo_start = gr.Button("Start GRPO", variant="primary")
+            grpo_cancel = gr.Button("Cancel")
+        grpo_status = gr.Markdown("Idle.")
+        with gr.Row():
+            loss_plot = gr.LinePlot(value=None, x="step", y="loss", title="Loss", height=260)
+            reward_plot = gr.LinePlot(
+                value=None, x="step", y="reward", title="Mean reward", height=260,
+            )
+        samples = gr.Dataframe(
+            headers=["step", "prompt", "completion", "reward"],
+            label="Recent (prompt, completion, reward) triples",
+            interactive=False, wrap=True,
+        )
+        grpo_log = gr.Textbox(label="Log", lines=10, interactive=False, max_lines=18)
+        timer = gr.Timer(POLL_INTERVAL_S)
+
+        # ---- Handlers ------------------------------------------------------
+        def _start(
+            form_state, ds_name_, ds_config_, ds_split_, prompt_col_,
+            reward_choices_,
+            regex_pattern_, length_target_, contains_kw_,
+            regex_weight_, length_weight_, contains_weight_,
+            num_gen_, max_prompt_, max_completion_,
+            beta_, temperature_, top_p_, use_vllm_,
+        ):
+            if run_state.is_running:
+                return "A run is already in progress."
+
+            from whoa_llm.training.grpo import RewardSpec
+            rewards = []
+            for name in reward_choices_:
+                if name == "regex_format_reward":
+                    rewards.append(RewardSpec(
+                        name=name, kwargs={"pattern": regex_pattern_},
+                        weight=float(regex_weight_),
+                    ))
+                elif name == "length_reward":
+                    rewards.append(RewardSpec(
+                        name=name, kwargs={"target_tokens": int(length_target_)},
+                        weight=float(length_weight_),
+                    ))
+                elif name == "contains_reward":
+                    kws = [k.strip() for k in (contains_kw_ or "").split(",") if k.strip()]
+                    rewards.append(RewardSpec(
+                        name=name, kwargs={"keywords": kws},
+                        weight=float(contains_weight_),
+                    ))
+                else:
+                    # User-pasted reward — no UI knobs.
+                    rewards.append(RewardSpec(name=name))
+
+            if not rewards:
+                return "❌ Select at least one reward function."
+
+            try:
+                form_dict = dict(form_state or {})
+                form_dict.update({
+                    "dataset_name": ds_name_,
+                    "dataset_config": ds_config_,
+                    "dataset_split": ds_split_,
+                    "prompt_column": prompt_col_,
+                    "num_generations": int(num_gen_),
+                    "max_prompt_length": int(max_prompt_),
+                    "max_completion_length": int(max_completion_),
+                    "beta": float(beta_),
+                    "temperature": float(temperature_),
+                    "top_p": float(top_p_),
+                    "use_vllm": bool(use_vllm_),
+                })
+                cfg = _build_grpo_config(form_dict, rewards)
+            except Exception as exc:  # noqa: BLE001
+                return f"❌ Invalid config: {exc}"
+
+            ok = run_state.start(cfg, kind="grpo")
+            return "GRPO started." if ok else "Could not start a run."
+
+        def _cancel():
+            run_state.cancel()
+            return "Cancellation requested."
+
+        def _tick():
+            snap = run_state.metrics.snapshot()
+            loss_data = [
+                {"step": p["step"], "loss": p["loss"]}
+                for p in snap if p.get("loss") is not None
+            ] or None
+            reward_data = [
+                {"step": p["step"], "reward": p.get("reward", p.get("rewards/mean"))}
+                for p in snap
+                if (p.get("reward") is not None or p.get("rewards/mean") is not None)
+            ] or None
+            if run_state.is_running:
+                latest = run_state.metrics.latest or {}
+                status = f"Running — step {latest.get('step', '?')} loss {latest.get('loss', '?')}"
+            elif run_state.last_error:
+                status = f"❌ {run_state.last_error}"
+            elif run_state.last_summary:
+                status = f"✅ Done — {run_state.last_summary}"
+            else:
+                status = "Idle."
+            table = run_state.reward_samples.as_table()
+            return status, loss_data, reward_data, table, run_state.log.text()
+
+        grpo_start.click(
+            _start,
+            inputs=[
+                form, ds_name, ds_config, ds_split, prompt_col,
+                reward_choices,
+                regex_pattern, length_target, contains_kw,
+                regex_weight, length_weight, contains_weight,
+                num_gen, max_prompt, max_completion,
+                beta, temperature, top_p, use_vllm,
+            ],
+            outputs=[grpo_status],
+        )
+        grpo_cancel.click(_cancel, outputs=[grpo_status])
+        timer.tick(
+            _tick,
+            outputs=[grpo_status, loss_plot, reward_plot, samples, grpo_log],
+        )
+
+
 def _build_export_tab():
     with gr.Tab("Export"):
         gr.Markdown("### Merge LoRA + push to Hub")
@@ -413,6 +716,7 @@ def build_app(run_state: RunState | None = None) -> gr.Blocks:
         _build_dataset_tab(form, model_widgets["model_id"])
         _build_training_tab(form)
         _build_run_tab(form, run_state)
+        _build_grpo_tab(form, run_state)
         _build_export_tab()
 
     return app
