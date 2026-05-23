@@ -1,12 +1,8 @@
 """Tests for reward-sample capture and GRPO-aware RunState."""
 
-import time
 from types import SimpleNamespace
 
-import pytest
-
 from whoa_llm.ui.state import (
-    RewardSample,
     RewardSampleBuffer,
     RunState,
     wrap_reward_for_capture,

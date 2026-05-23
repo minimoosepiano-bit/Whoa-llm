@@ -122,7 +122,10 @@ def _build_grpo_config(form: dict[str, Any], rewards: list) -> Any:
     """Build a :class:`GRPOConfig` from the UI form + selected/parametrised rewards."""
     from whoa_llm.training.grpo import GRPOConfig, RewardSpec
     from whoa_llm.training.sft import (
-        DatasetConfig, LoRAConfig, MemoryConfig, TrainConfig,
+        DatasetConfig,
+        LoRAConfig,
+        MemoryConfig,
+        TrainConfig,
     )
 
     reward_specs: list[RewardSpec] = []
@@ -254,7 +257,7 @@ def _build_model_tab(form: gr.State):
             engine = gr.Dropdown(
                 label="Engine", choices=["auto", "unsloth", "hf"], value="auto",
             )
-        hw_md = gr.Markdown(f"```\n{_hardware_summary()}\n```")
+        gr.Markdown(f"```\n{_hardware_summary()}\n```")
         with gr.Row():
             method = gr.Dropdown(
                 label="Method", choices=["lora", "qlora", "full"], value="lora",
@@ -717,6 +720,7 @@ def _build_export_tab():
 
         def _do_card(out):
             import yaml as _yaml
+
             from whoa_llm.ui.export import card_from_config
             cfg_path = Path(out) / "config.yaml" if out else None
             if not cfg_path or not cfg_path.exists():

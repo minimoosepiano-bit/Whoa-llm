@@ -1,0 +1,34 @@
+# Full fine-tune (no LoRA) of a small model — only practical for sub-1B models.
+#
+# Run with:  whoa-llm train examples/configs/sft_full_tiny.yaml
+type: sft
+
+model_id: HuggingFaceTB/SmolLM2-135M
+method: full
+precision: bf16
+engine: hf
+
+dataset:
+  name: tatsu-lab/alpaca
+  split: train[:500]
+  format: alpaca
+
+train:
+  epochs: 1
+  learning_rate: 5.0e-5
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 2
+  max_seq_length: 512
+  warmup_ratio: 0.03
+  logging_steps: 5
+  save_steps: 200
+  optim: adamw_torch_fused
+  gradient_checkpointing: true
+
+memory:
+  quantization: none
+  attn_impl: sdpa
+
+output_dir: outputs/smollm2-135m-alpaca-full
+run_name: smollm2-135m-alpaca-full
+seed: 42

@@ -1,7 +1,5 @@
 """Tests for checkpoint discovery and resume helpers."""
 
-from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest

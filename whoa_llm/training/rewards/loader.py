@@ -13,8 +13,9 @@ import importlib
 import importlib.util
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 def _named_partial(func: Callable, /, **kwargs: Any) -> Callable:

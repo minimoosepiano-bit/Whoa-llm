@@ -1,7 +1,8 @@
 """Tests for the engine registry (no ML downloads needed)."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from whoa_llm.engines.registry import pick_engine
 

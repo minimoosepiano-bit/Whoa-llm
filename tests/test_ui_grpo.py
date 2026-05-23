@@ -1,6 +1,5 @@
 """Tests for the GRPO UI handlers (no Gradio launch needed)."""
 
-from pathlib import Path
 
 import pytest
 

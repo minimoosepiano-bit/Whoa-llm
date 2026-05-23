@@ -13,9 +13,10 @@ import threading
 import time
 import traceback
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,8 @@ def wrap_reward_for_capture(
     def _wrapped(prompts, completions, **kwargs):
         rewards = fn(prompts, completions, **kwargs)
         try:
-            for p, c, r in list(zip(prompts, completions, rewards))[:max_per_step]:
+            triples = list(zip(prompts, completions, rewards, strict=False))[:max_per_step]
+            for p, c, r in triples:
                 buffer.add(_flatten(p), _flatten(c), float(r))
         except Exception:  # noqa: BLE001 — never let UI capture break training
             logger.exception("Reward capture failed")

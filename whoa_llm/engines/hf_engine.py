@@ -62,7 +62,6 @@ def load_model_and_tokenizer(
 
     # ---------- quantisation config -----------------------------------------
     bnb_config: BitsAndBytesConfig | None = None
-    load_in_4bit = False
     load_in_8bit = False
 
     if quantization == "4bit":
@@ -72,7 +71,6 @@ def load_model_and_tokenizer(
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
         )
-        load_in_4bit = True
         logger.info("HF engine: loading in 4-bit NF4 (QLoRA-ready)")
     elif quantization == "8bit":
         load_in_8bit = True

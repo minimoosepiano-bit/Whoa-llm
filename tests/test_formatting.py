@@ -1,7 +1,8 @@
 """Tests for dataset formatting templates (no network, no torch)."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from whoa_llm.data.formatting import (
     SUPPORTED_FORMATS,

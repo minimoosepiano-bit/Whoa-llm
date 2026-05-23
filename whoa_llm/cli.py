@@ -28,7 +28,7 @@ def ui(
     port: int = typer.Option(7860, help="Port to serve the Gradio app on."),
     share: bool = typer.Option(False, help="Create a public Gradio share link."),
 ) -> None:
-    """Launch the Gradio web UI. (Implemented in Phase 5.)"""
+    """Launch the Gradio web UI."""
     try:
         from whoa_llm.ui.app import launch
     except ImportError as e:  # pragma: no cover - phase-5 gate

@@ -1,6 +1,5 @@
 """Tests for the export helpers (mocks all heavy ML calls)."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

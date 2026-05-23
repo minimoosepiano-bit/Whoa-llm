@@ -12,8 +12,9 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 

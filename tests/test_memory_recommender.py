@@ -1,13 +1,10 @@
 """Tests for the memory recommender (pure function, no torch needed)."""
 
-from dataclasses import replace
 
-import pytest
 
 from whoa_llm.hardware import (
     GPUInfo,
     HardwarePreset,
-    MemoryRecommendation,
     recommend_memory,
 )
 

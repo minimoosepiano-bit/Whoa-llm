@@ -3,7 +3,7 @@
 import pytest
 
 from whoa_llm.training.grpo import GRPOConfig, RewardSpec
-from whoa_llm.training.sft import DatasetConfig, LoRAConfig, TrainConfig
+from whoa_llm.training.sft import DatasetConfig, TrainConfig
 
 
 def _base(**kwargs) -> GRPOConfig:

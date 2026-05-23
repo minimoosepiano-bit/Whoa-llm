@@ -23,8 +23,9 @@ pytest.importorskip("datasets")
 
 def _make_tiny_gpt2(path) -> str:
     """Create + save a tiny GPT-2 model and tokenizer at *path*; return path."""
-    from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
     import os
+
+    from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
 
     cfg = GPT2Config(
         vocab_size=1000,

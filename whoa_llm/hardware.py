@@ -222,7 +222,6 @@ def recommend_memory(
     if preset is None:
         preset = detect()
 
-    vram = preset.primary_vram_gb
     free_vram = preset.gpus[0].free_vram_gb if preset.gpus else 0.0
     ram = preset.available_ram_gb
 
@@ -314,8 +313,8 @@ def recommend_memory(
         precision="fp32",
         breakdown=breakdown,
         rationale=(
-            f"No CUDA GPU detected. Running on CPU at fp32 — "
-            f"viable only for very small models (<=1B)."
+            "No CUDA GPU detected. Running on CPU at fp32 — "
+            "viable only for very small models (<=1B)."
         ),
     )
 
