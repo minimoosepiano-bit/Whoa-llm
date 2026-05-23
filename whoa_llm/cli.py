@@ -40,14 +40,27 @@ def ui(
 
 @app.command()
 def train(config: Path = typer.Argument(..., exists=True, readable=True)) -> None:
-    """Run a headless SFT job from a YAML config."""
+    """Run a headless SFT or GRPO job from a YAML config.
+
+    Dispatches based on the top-level ``type:`` key (``sft`` | ``grpo``);
+    defaults to ``sft`` when omitted.
+    """
     import yaml
 
-    from whoa_llm.training.sft import SFTConfig, run_sft
-
     data = yaml.safe_load(config.read_text())
-    cfg = SFTConfig.model_validate(data)
-    summary = run_sft(cfg)
+    kind = (data.pop("type", None) or "sft").lower()
+
+    if kind == "sft":
+        from whoa_llm.training.sft import SFTConfig, run_sft
+        cfg = SFTConfig.model_validate(data)
+        summary = run_sft(cfg)
+    elif kind == "grpo":
+        from whoa_llm.training.grpo import GRPOConfig, run_grpo
+        cfg = GRPOConfig.model_validate(data)
+        summary = run_grpo(cfg)
+    else:
+        raise typer.BadParameter(f"Unknown training type {kind!r}; expected 'sft' or 'grpo'.")
+
     typer.echo(yaml.safe_dump(summary, sort_keys=False))
 
 
