@@ -14,9 +14,76 @@ Both functions import torch / transformers / peft lazily.
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def find_gguf_converter() -> str | None:
+    """Return the path to llama.cpp's ``convert_hf_to_gguf.py`` if available.
+
+    Looks on ``$PATH`` and falls back to common locations.  Returns ``None``
+    when nothing is found; callers should show an install hint.
+    """
+    for name in ("convert_hf_to_gguf.py", "convert-hf-to-gguf.py"):
+        found = shutil.which(name)
+        if found:
+            return found
+    # Common manual-install paths.
+    for candidate in (
+        Path.home() / "llama.cpp" / "convert_hf_to_gguf.py",
+        Path("/opt/llama.cpp/convert_hf_to_gguf.py"),
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def convert_to_gguf(
+    model_dir: str | Path,
+    out_path: str | Path,
+    *,
+    quant: str = "q4_k_m",
+) -> Path:
+    """Convert an HF model directory to GGUF using llama.cpp's converter.
+
+    Parameters
+    ----------
+    model_dir:
+        Directory containing the *merged* HF model (not a LoRA adapter).
+    out_path:
+        Destination ``.gguf`` file.
+    quant:
+        Quantisation type passed through as ``--outtype``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the llama.cpp converter isn't on ``$PATH``.
+    """
+    converter = find_gguf_converter()
+    if converter is None:
+        raise FileNotFoundError(
+            "Could not find convert_hf_to_gguf.py from llama.cpp on $PATH. "
+            "Clone https://github.com/ggerganov/llama.cpp and add the repo "
+            "to PATH, or place convert_hf_to_gguf.py somewhere we look "
+            "(~/llama.cpp/ or /opt/llama.cpp/)."
+        )
+
+    model_dir = Path(model_dir)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "python", converter, str(model_dir),
+        "--outfile", str(out_path),
+        "--outtype", quant,
+    ]
+    logger.info("Running GGUF conversion: %s", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+    return out_path
 
 
 def merge_adapter(
@@ -90,13 +157,46 @@ def write_model_card(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "README.md"
-    body = f"""# Fine-tuned {base_model}
+    hp_lines = "\n".join(f"  - **{k}**: `{v}`" for k, v in hyperparams.items())
+    body = f"""---
+base_model: {base_model}
+library_name: peft
+tags:
+  - whoa-llm
+  - {method}
+---
 
-- **Method**: {method}
-- **Dataset**: {dataset}
-- **Hyperparameters**: `{hyperparams}`
+# Fine-tuned {base_model}
+
+- **Method**: `{method}`
+- **Dataset**: `{dataset}`
+- **Hyperparameters**:
+{hp_lines}
 
 Produced by [whoa-llm](https://github.com/minimoosepiano-bit/whoa-llm).
 """
     path.write_text(body)
     return path
+
+
+def card_from_config(output_dir: str | Path, config_dict: dict) -> Path:
+    """Convenience: build a model card from a saved ``config.yaml`` dict."""
+    train = config_dict.get("train", {})
+    lora = config_dict.get("lora", {})
+    hyperparams = {
+        "epochs": train.get("epochs"),
+        "learning_rate": train.get("learning_rate"),
+        "batch_size": train.get("per_device_train_batch_size"),
+        "grad_accum": train.get("gradient_accumulation_steps"),
+        "lora_r": lora.get("r"),
+        "lora_alpha": lora.get("alpha"),
+        "precision": config_dict.get("precision"),
+        "quantization": config_dict.get("memory", {}).get("quantization"),
+    }
+    return write_model_card(
+        output_dir,
+        base_model=config_dict.get("model_id", "unknown"),
+        method=config_dict.get("method", "lora"),
+        dataset=(config_dict.get("dataset") or {}).get("name", "unknown"),
+        hyperparams={k: v for k, v in hyperparams.items() if v is not None},
+    )

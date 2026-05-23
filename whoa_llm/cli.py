@@ -39,6 +39,17 @@ def ui(
 
 
 @app.command()
+def resume(output_dir: Path = typer.Argument(..., exists=True, file_okay=False)) -> None:
+    """Resume a training run from a previous output directory."""
+    import yaml
+
+    from whoa_llm.training.resume import resume_run
+
+    summary = resume_run(output_dir)
+    typer.echo(yaml.safe_dump(summary, sort_keys=False))
+
+
+@app.command()
 def train(config: Path = typer.Argument(..., exists=True, readable=True)) -> None:
     """Run a headless SFT or GRPO job from a YAML config.
 

@@ -216,6 +216,7 @@ def run_sft(
     *,
     metrics_callback: Any | None = None,
     extra_callbacks: list[Any] | None = None,
+    resume_from_checkpoint: str | bool | None = None,
 ) -> dict[str, Any]:
     """Run a single SFT job and return a summary dict.
 
@@ -244,8 +245,15 @@ def run_sft(
     output_dir = Path(cfg.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save a copy of the config for resume/reproducibility.
+    # Save a copy of the config in both JSON and YAML for resume/reproducibility.
     (output_dir / "config.json").write_text(cfg.model_dump_json(indent=2))
+    try:
+        import yaml
+        (output_dir / "config.yaml").write_text(
+            yaml.safe_dump({"type": "sft", **cfg.model_dump()}, sort_keys=False)
+        )
+    except ImportError:
+        pass
 
     # ---------------- engine selection & model load ------------------------
     engine = pick_engine(cfg.model_id, force=None if cfg.engine == "auto" else cfg.engine)
@@ -324,7 +332,11 @@ def run_sft(
     trainer = SFTTrainer(**trainer_kwargs)
 
     # ---------------- run ---------------------------------------------------
-    result = trainer.train()
+    train_kwargs: dict[str, Any] = {}
+    if resume_from_checkpoint is not None:
+        train_kwargs["resume_from_checkpoint"] = resume_from_checkpoint
+        logger.info("Resuming from checkpoint: %s", resume_from_checkpoint)
+    result = trainer.train(**train_kwargs)
     trainer.save_model(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
 

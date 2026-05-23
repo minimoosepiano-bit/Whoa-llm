@@ -379,6 +379,12 @@ def _build_run_tab(form: gr.State, run_state: RunState):
             start_btn = gr.Button("Start training", variant="primary")
             cancel_btn = gr.Button("Cancel")
             save_yaml_btn = gr.Button("Save config as YAML")
+        with gr.Row():
+            resume_dir = gr.Textbox(
+                label="Resume from output dir",
+                placeholder="outputs/sft  (looks for config.yaml + checkpoint-*)",
+            )
+            resume_btn = gr.Button("Resume run")
         status_md = gr.Markdown("Idle.")
         loss_plot = gr.LinePlot(
             value=None,
@@ -436,9 +442,16 @@ def _build_run_tab(form: gr.State, run_state: RunState):
                 status = "Idle."
             return status, plot_data, run_state.log.text()
 
+        def _resume(out_dir):
+            if not out_dir or not out_dir.strip():
+                return "Enter the previous run's output directory."
+            _, msg = run_state.resume(out_dir.strip())
+            return msg
+
         start_btn.click(_start, inputs=[form], outputs=[status_md])
         cancel_btn.click(_cancel, outputs=[status_md])
         save_yaml_btn.click(_save_yaml, inputs=[form], outputs=[saved_yaml])
+        resume_btn.click(_resume, inputs=[resume_dir], outputs=[status_md])
         timer.tick(_tick, outputs=[status_md, loss_plot, log_box])
 
 
@@ -660,14 +673,34 @@ def _build_grpo_tab(form: gr.State, run_state: RunState):
 
 def _build_export_tab():
     with gr.Tab("Export"):
-        gr.Markdown("### Merge LoRA + push to Hub")
+        gr.Markdown("### Merge LoRA, write model card, convert to GGUF, push")
+
+        # --- Merge ---
+        gr.Markdown("#### 1. Merge adapter")
         with gr.Row():
             base_model = gr.Textbox(label="Base model id")
             adapter_dir = gr.Textbox(label="Adapter directory")
-            out_dir = gr.Textbox(label="Output directory")
-        merge_btn = gr.Button("Merge & save")
+            out_dir = gr.Textbox(label="Output directory (merged)")
+        merge_btn = gr.Button("Merge & save", variant="primary")
         merge_status = gr.Markdown()
 
+        # --- Model card ---
+        gr.Markdown("#### 2. Model card")
+        card_btn = gr.Button("Generate README.md from config.yaml")
+        card_status = gr.Markdown()
+
+        # --- GGUF ---
+        gr.Markdown("#### 3. GGUF (llama.cpp)")
+        with gr.Row():
+            gguf_quant = gr.Dropdown(
+                label="Quant", choices=["q4_k_m", "q5_k_m", "q8_0", "f16"], value="q4_k_m",
+            )
+            gguf_out = gr.Textbox(label="GGUF output path", placeholder="model.gguf")
+        gguf_btn = gr.Button("Convert to GGUF")
+        gguf_status = gr.Markdown()
+
+        # --- Push ---
+        gr.Markdown("#### 4. Push to Hub")
         with gr.Row():
             repo_id = gr.Textbox(label="HF repo (user/name)")
             private = gr.Checkbox(label="Private", value=True)
@@ -678,19 +711,50 @@ def _build_export_tab():
             from whoa_llm.ui.export import merge_adapter
             try:
                 p = merge_adapter(base, adapter, out)
-                return f"Merged → `{p}`"
+                return f"✅ Merged → `{p}`"
             except Exception as exc:  # noqa: BLE001
-                return f"Merge failed: {exc}"
+                return f"❌ Merge failed: {exc}"
+
+        def _do_card(out):
+            import yaml as _yaml
+            from whoa_llm.ui.export import card_from_config
+            cfg_path = Path(out) / "config.yaml" if out else None
+            if not cfg_path or not cfg_path.exists():
+                return f"❌ No config.yaml in `{out}`."
+            data = _yaml.safe_load(cfg_path.read_text())
+            data.pop("type", None)
+            try:
+                p = card_from_config(out, data)
+            except Exception as exc:  # noqa: BLE001
+                return f"❌ {exc}"
+            return f"✅ Wrote `{p}`"
+
+        def _do_gguf(merged_dir, gguf_path, quant):
+            from whoa_llm.ui.export import convert_to_gguf, find_gguf_converter
+            if find_gguf_converter() is None:
+                return (
+                    "❌ llama.cpp's `convert_hf_to_gguf.py` not found on $PATH. "
+                    "Clone https://github.com/ggerganov/llama.cpp and add it."
+                )
+            if not gguf_path.strip():
+                gguf_path = str(Path(merged_dir) / "model.gguf")
+            try:
+                p = convert_to_gguf(merged_dir, gguf_path, quant=quant)
+            except Exception as exc:  # noqa: BLE001
+                return f"❌ {exc}"
+            return f"✅ Wrote `{p}`"
 
         def _do_push(local, repo, priv):
             from whoa_llm.ui.export import push_to_hub
             try:
                 url = push_to_hub(local, repo, private=priv)
-                return f"Pushed → {url}"
+                return f"✅ Pushed → {url}"
             except Exception as exc:  # noqa: BLE001
-                return f"Push failed: {exc}"
+                return f"❌ {exc}"
 
         merge_btn.click(_do_merge, inputs=[base_model, adapter_dir, out_dir], outputs=[merge_status])
+        card_btn.click(_do_card, inputs=[out_dir], outputs=[card_status])
+        gguf_btn.click(_do_gguf, inputs=[out_dir, gguf_out, gguf_quant], outputs=[gguf_status])
         push_btn.click(_do_push, inputs=[out_dir, repo_id, private], outputs=[push_status])
 
 

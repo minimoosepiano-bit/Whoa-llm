@@ -164,6 +164,51 @@ class RunState:
         self._cancel.set()
         self.log.write("Cancellation requested — will stop after current step.")
 
+    def resume(self, output_dir: str | Path) -> tuple[bool, str]:
+        """Resume a previous run from *output_dir*. Returns (ok, message)."""
+        from whoa_llm.training.resume import find_latest_checkpoint
+
+        with self._start_lock:
+            if self.is_running:
+                return False, "A run is already in progress."
+            path = Path(output_dir)
+            if not (path / "config.yaml").exists():
+                return False, f"No config.yaml in {path!r}."
+            ckpt = find_latest_checkpoint(path)
+            if ckpt is None:
+                return False, f"No checkpoint-* dirs in {path!r}."
+
+            self.metrics.reset()
+            self.reward_samples.reset()
+            self._cancel.clear()
+            self.last_summary = None
+            self.last_error = None
+            self.last_output_dir = path
+            self.kind = "resume"
+            self.log.write(f"Resuming from {ckpt}")
+            self._thread = threading.Thread(
+                target=self._resume_worker, args=(path,),
+                name="whoa-llm-resume", daemon=True,
+            )
+            self._thread.start()
+            return True, f"Resuming from {ckpt}."
+
+    def _resume_worker(self, output_dir: Path) -> None:
+        cancel_cb = _CancelCallback(self._cancel)
+        try:
+            from whoa_llm.training.resume import resume_run
+            summary = resume_run(
+                output_dir,
+                metrics_callback=self.metrics,
+                extra_callbacks=[cancel_cb],
+            )
+            self.last_summary = summary
+            self.log.write(f"Resume finished: {summary}")
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            self.log.write(f"Resume failed: {self.last_error}")
+            logger.exception("Resume thread crashed")
+
     # ------------------------------------------------------------------
     # Worker
     # ------------------------------------------------------------------
