@@ -1,0 +1,59 @@
+# GRPO with a regex format reward — train a model to wrap answers in
+# <answer>...</answer> tags.
+#
+# Run with:  whoa-llm train examples/configs/grpo_format.yaml
+type: grpo
+
+model_id: meta-llama/Llama-3.2-1B-Instruct
+method: lora
+precision: bf16
+engine: auto
+
+dataset:
+  name: openai/gsm8k
+  config: main
+  split: train[:500]
+  format: raw_text
+prompt_column: question
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+
+train:
+  epochs: 1
+  learning_rate: 5.0e-6
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  max_seq_length: 1024
+  logging_steps: 1
+  save_steps: 100
+  optim: paged_adamw_8bit
+  gradient_checkpointing: true
+
+memory:
+  quantization: 4bit
+  attn_impl: sdpa
+
+# GRPO knobs
+num_generations: 4
+max_prompt_length: 256
+max_completion_length: 256
+beta: 0.04
+temperature: 1.0
+top_p: 1.0
+use_vllm: false
+
+rewards:
+  - name: regex_format_reward
+    kwargs:
+      pattern: "<answer>\\d+</answer>"
+    weight: 1.0
+  - name: length_reward
+    kwargs:
+      target_tokens: 64
+    weight: 0.2
+
+output_dir: outputs/llama-1b-grpo-format
+seed: 42
